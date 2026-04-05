@@ -1,0 +1,31 @@
+=========================================
+  SISTEMA DE SAQUES — GUIA DE INSTALAÇÃO
+=========================================
+
+1. COPIE as pastas para dentro do seu projeto:
+   - app/dashboard/page.tsx         → substitui o atual
+   - app/api/stripe/connect/route.ts
+   - app/api/withdrawals/route.ts
+   - app/api/webhooks/stripe/route.ts
+   - components/WithdrawTab.tsx
+
+2. RODE o SQL no Supabase:
+   - Acesse: supabase.com → seu projeto → SQL Editor
+   - Cole o conteúdo de: supabase/migration_withdrawals.sql
+   - Clique em RUN
+
+3. INSTALE o Stripe:
+   npm install stripe
+
+4. ADICIONE as variáveis no .env.local e na Vercel:
+   STRIPE_SECRET_KEY=sk_live_...
+   STRIPE_WEBHOOK_SECRET=whsec_...
+   NEXT_PUBLIC_APP_URL=https://projeto-mark1234.vercel.app
+   SUPABASE_SERVICE_ROLE_KEY=...
+
+5. CONFIGURE o Webhook no Stripe Dashboard:
+   - stripe.com/dashboard → Webhooks → Add endpoint
+   - URL: https://seusite.vercel.app/api/webhooks/stripe
+   - Eventos: transfer.created, payout.paid, payout.failed, account.updated
+
+=========================================
