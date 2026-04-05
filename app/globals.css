@@ -1,0 +1,67 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap');
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --blue:       #007BFF;
+  --blue-dark:  #0056B3;
+  --blue-light: #EBF4FF;
+  --bg:         #F9FAFB;
+  --white:      #FFFFFF;
+  --text:       #111827;
+  --text-2:     #374151;
+  --text-3:     #6B7280;
+  --border:     #E5E7EB;
+  --border-2:   #D1D5DB;
+  --surface:    #F3F4F6;
+  --red:        #EF4444;
+  --green:      #10B981;
+  --yellow:     #F59E0B;
+  --shadow-sm:  0 1px 2px rgba(0,0,0,.06), 0 1px 3px rgba(0,0,0,.1);
+  --shadow:     0 4px 6px -1px rgba(0,0,0,.08), 0 2px 4px -2px rgba(0,0,0,.06);
+  --shadow-lg:  0 10px 15px -3px rgba(0,0,0,.1), 0 4px 6px -4px rgba(0,0,0,.06);
+  --r:          8px;
+  --r-full:     9999px;
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { scroll-behavior: smooth; }
+body {
+  background: var(--bg);
+  font-family: 'Inter', system-ui, sans-serif;
+  color: var(--text);
+  min-height: 100vh;
+  -webkit-font-smoothing: antialiased;
+}
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: var(--bg); }
+::-webkit-scrollbar-thumb { background: var(--border-2); border-radius: 99px; }
+
+/* ─── TOAST ─── */
+@keyframes toastIn { from{opacity:0;transform:translateX(16px)}to{opacity:1;transform:translateX(0)} }
+@keyframes slideUp { from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)} }
+@keyframes shimmer { 0%{left:-60%}100%{left:120%} }
+@keyframes fadeIn  { from{opacity:0}to{opacity:1} }
+
+.animate-toast-in { animation: toastIn .2s ease; }
+.animate-slide-up { animation: slideUp .2s ease; }
+.animate-fade-in  { animation: fadeIn .15s ease; }
+
+/* ─── PROD CARD HOVER ─── */
+.prod-card { transition: box-shadow .2s, transform .2s; }
+.prod-card:hover { box-shadow: 0 12px 32px -4px rgba(0,123,255,.15); transform: translateY(-2px); }
+
+/* ─── CHECKOUT SHIMMER ─── */
+.checkout-shimmer {
+  position: relative; overflow: hidden;
+}
+.checkout-shimmer::after {
+  content: '';
+  position: absolute; top: 0; left: -60%; width: 40%; height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,.25), transparent);
+  transform: skewX(-20deg); animation: shimmer 2.5s infinite;
+}
+
+/* ─── DROP ZONE ─── */
+.drop-zone-active { border-color: var(--blue) !important; background: var(--blue-light) !important; }
