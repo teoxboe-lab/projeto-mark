@@ -52,7 +52,7 @@ export default function Header() {
   return (
     <header style={{ position: 'sticky', top: 0, zIndex: 500, background: '#fff', borderBottom: '1px solid var(--border)', boxShadow: 'var(--shadow-sm)', height: 64, display: 'flex', alignItems: 'center', padding: '0 24px', gap: 20 }}>
       {/* Logo */}
-      <span onClick={() => router.push('/vitrine')} style={{ fontSize: 22, fontWeight: 900, color: 'var(--blue)', letterSpacing: '-.04em', cursor: 'pointer', fontStyle: 'italic', flexShrink: 0, userSelect: 'none' }}>GGMAX</span>
+      <span onClick={() => router.push('/vitrine')} style={{ fontSize: 22, fontWeight: 900, color: 'var(--blue)', letterSpacing: '-.04em', cursor: 'pointer', fontStyle: 'italic', flexShrink: 0, userSelect: 'none' }}>Framework</span>
 
       {/* Search */}
       <form onSubmit={handleSearch} style={{ flex: 1, maxWidth: 480, display: 'flex', alignItems: 'center', gap: 10, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--r-full)', padding: '0 16px', height: 40, transition: 'border-color .15s' }}
