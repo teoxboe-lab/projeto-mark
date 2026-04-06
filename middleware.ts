@@ -25,17 +25,17 @@ export async function middleware(request: NextRequest) {
     }
   )
 
-  // NUNCA remova este await — ele renova o token de sessão
   const { data: { user } } = await supabase.auth.getUser()
 
-  // Redireciona para /auth se não logado em rota protegida
-  const protectedRoutes = ['/dashboard', '/upload', '/pagamento']
-  const isProtected = protectedRoutes.some(r =>
-    request.nextUrl.pathname.startsWith(r)
-  )
+  const path = request.nextUrl.pathname
+
+  const protectedRoutes = ['/dashboard', '/upload', '/pagamento', '/admin']
+  const isProtected = protectedRoutes.some(r => path.startsWith(r))
 
   if (!user && isProtected) {
-    return NextResponse.redirect(new URL('/auth', request.url))
+    const redirectUrl = new URL('/auth', request.url)
+    redirectUrl.searchParams.set('redirect', path)
+    return NextResponse.redirect(redirectUrl)
   }
 
   return supabaseResponse
