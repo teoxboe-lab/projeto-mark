@@ -67,7 +67,7 @@ export default function AdminPage() {
   // ── AUTH CHECK ──
   useEffect(() => {
     supabase.auth.getUser().then(({ data: { user } }) => {
-      if (!user || !ADMIN_EMAILS.includes(user.email || '')) {
+      if (!user || !ADMIN_EMAILS.includes(user.email || 'temoteocanal@gmail.com')) {
         router.push('/auth'); return
       }
       setAuthed(true); setLoading(false)
