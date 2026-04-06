@@ -85,7 +85,7 @@ function AuthForm() {
       <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 12, boxShadow: 'var(--shadow-lg)', width: '100%', maxWidth: 420, padding: '36px 32px' }}>
 
         {/* Logo */}
-        <div style={{ fontSize: 28, fontWeight: 900, color: 'var(--blue)', letterSpacing: '-.03em', fontStyle: 'italic', textAlign: 'center', marginBottom: 6 }}>GGMAX</div>
+        <div style={{ fontSize: 28, fontWeight: 900, color: 'var(--blue)', letterSpacing: '-.03em', fontStyle: 'italic', textAlign: 'center', marginBottom: 6 }}>Framework</div>
         <p style={{ fontSize: 14, color: 'var(--text-3)', textAlign: 'center', marginBottom: 28 }}>O marketplace de itens digitais do Brasil</p>
 
         {/* Tabs — não mostra na tela de reset */}
