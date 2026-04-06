@@ -4,7 +4,7 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 
 // ── E-mails com acesso admin ──
-const ADMIN_EMAILS = ['admin@ggmax.com.br', 'seu@email.com']
+const ADMIN_EMAILS = ['narroads001@gmail.com', 'narroads001@gmail.com']
 
 interface Profile {
   id: string; nome: string; email: string; role: string
@@ -255,7 +255,7 @@ export default function AdminPage() {
       <div style={S.sidebar}>
         <div style={{ display:'flex', alignItems:'center', gap:8, padding:'.4rem .5rem', marginBottom:'.25rem' }}>
           <div style={{ width:34, height:34, borderRadius:9, background:'#2563EB', display:'flex', alignItems:'center', justifyContent:'center', fontSize:15, fontWeight:900, color:'#fff', fontStyle:'italic', flexShrink:0 }}>G</div>
-          <span style={{ fontSize:16, fontWeight:900, color:'#2563EB', fontStyle:'italic', letterSpacing:'-.03em' }}>GGMAX</span>
+          <span style={{ fontSize:16, fontWeight:900, color:'#2563EB', fontStyle:'italic', letterSpacing:'-.03em' }}>Framework</span>
         </div>
         <div style={{ display:'inline-flex', alignItems:'center', gap:5, background:'#FEF2F2', border:'1px solid #FECACA', borderRadius:6, padding:'3px 8px', fontSize:10, color:'#EF4444', fontWeight:700, letterSpacing:'.06em', textTransform:'uppercase', margin:'0 .5rem 1.25rem' }}>
           🔒 Admin Panel
