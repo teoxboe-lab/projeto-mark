@@ -18,29 +18,34 @@ const CATS = [
   { id: 'outros',     label: 'Outros',      emoji: '📦', niche: 'outros'     },
 ]
 
+const ACCEPTED_ZIP = '.zip,.rar,.7z,.tar,.gz'
+const MAX_ZIP_MB = 500
+
 export default function UploadPage() {
   const router = useRouter()
   const supabase = createClient()
-  const fileRef = useRef<HTMLInputElement>(null)
-  const thumbRef = useRef<HTMLInputElement>(null)
+  const fileRef    = useRef<HTMLInputElement>(null)
+  const thumbRef   = useRef<HTMLInputElement>(null)
+  const zipRef     = useRef<HTMLInputElement>(null)
   const tagInputRef = useRef<HTMLInputElement>(null)
 
-  const [user, setUser] = useState<Profile | null>(null)
-  const [listings, setListings] = useState<Listing[]>([])
-  const [selCats, setSelCats] = useState<string[]>([])
-  const [tags, setTags] = useState<string[]>([])
-  const [tagInput, setTagInput] = useState('')
+  const [user, setUser]           = useState<Profile | null>(null)
+  const [listings, setListings]   = useState<Listing[]>([])
+  const [selCats, setSelCats]     = useState<string[]>([])
+  const [tags, setTags]           = useState<string[]>([])
+  const [tagInput, setTagInput]   = useState('')
   const [mediaFile, setMediaFile] = useState<File | null>(null)
   const [thumbFile, setThumbFile] = useState<File | null>(null)
+  const [zipFile, setZipFile]     = useState<File | null>(null)       // ← NOVO
+  const [zipProgress, setZipProgress] = useState(0)                   // ← NOVO
   const [mediaPreview, setMediaPreview] = useState('')
   const [thumbPreview, setThumbPreview] = useState('')
-  const [isDragging, setIsDragging] = useState(false)
-  const [uploading, setUploading] = useState(false)
-  const [progress, setProgress] = useState(0)
+  const [isDragging, setIsDragging]     = useState(false)
+  const [uploading, setUploading]       = useState(false)
+  const [progress, setProgress]         = useState(0)
   const [form, setForm] = useState({ title: '', desc: '', price: '', priceOld: '', url: '' })
   const [errors, setErrors] = useState<Record<string, string>>({})
 
-  // Auth guard
   useEffect(() => {
     supabase.auth.getUser().then(async ({ data: { user: u } }) => {
       if (!u) { router.push('/auth'); return }
@@ -58,17 +63,21 @@ export default function UploadPage() {
     setListings(data || [])
   }
 
-  // Checklist completeness
   const done = [!!mediaFile, !!form.title.trim(), !!form.desc.trim(), selCats.length > 0, form.price !== ''].filter(Boolean).length
 
-  const handleFile = (file: File) => {
-    setMediaFile(file)
-    setMediaPreview(URL.createObjectURL(file))
+  const handleFile  = (file: File) => { setMediaFile(file); setMediaPreview(URL.createObjectURL(file)) }
+  const handleThumb = (file: File) => { setThumbFile(file); setThumbPreview(URL.createObjectURL(file)) }
+
+  // ── Valida e seta arquivo ZIP/RAR ──
+  const handleZip = (file: File) => {
+    const sizeMB = file.size / 1024 / 1024
+    if (sizeMB > MAX_ZIP_MB) {
+      showToast(`Arquivo muito grande! Máximo ${MAX_ZIP_MB}MB`, 'err')
+      return
+    }
+    setZipFile(file)
   }
-  const handleThumb = (file: File) => {
-    setThumbFile(file)
-    setThumbPreview(URL.createObjectURL(file))
-  }
+
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault(); setIsDragging(false)
     const file = e.dataTransfer.files[0]
@@ -77,10 +86,7 @@ export default function UploadPage() {
 
   const addTag = () => {
     const t = tagInput.trim().toLowerCase()
-    if (t && !tags.includes(t) && tags.length < 8) {
-      setTags(prev => [...prev, t])
-      setTagInput('')
-    }
+    if (t && !tags.includes(t) && tags.length < 8) { setTags(prev => [...prev, t]); setTagInput('') }
   }
   const removeTag = (t: string) => setTags(prev => prev.filter(x => x !== t))
 
@@ -98,36 +104,65 @@ export default function UploadPage() {
   const handleSubmit = async () => {
     if (!validate()) { showToast('Preencha todos os campos obrigatórios!', 'err'); return }
     if (!user) return
-    setUploading(true); setProgress(0)
+    setUploading(true); setProgress(0); setZipProgress(0)
 
     try {
       let media_url: string | null = null
       let thumbnail_url: string | null = null
+      let file_url: string | null = null   // ← URL do ZIP/RAR
 
-      // Simula progresso enquanto faz upload
       const progressInterval = setInterval(() => {
-        setProgress(p => Math.min(p + 15, 85))
+        setProgress(p => Math.min(p + 15, 75))
       }, 200)
 
-      // Upload da mídia principal
+      // Upload mídia principal
       if (mediaFile) {
         const ext = mediaFile.name.split('.').pop()
         const path = `${user.id}/${Date.now()}-media.${ext}`
-        const { data, error } = await supabase.storage.from('listings-media').upload(path, mediaFile, { upsert: true })
-        if (!error && data) {
+        const { error } = await supabase.storage.from('listings-media').upload(path, mediaFile, { upsert: true })
+        if (!error) {
           const { data: { publicUrl } } = supabase.storage.from('listings-media').getPublicUrl(path)
           media_url = publicUrl
         }
       }
 
-      // Upload da thumbnail
+      // Upload thumbnail
       if (thumbFile) {
         const ext = thumbFile.name.split('.').pop()
         const path = `${user.id}/${Date.now()}-thumb.${ext}`
-        const { data, error } = await supabase.storage.from('listings-media').upload(path, thumbFile, { upsert: true })
-        if (!error && data) {
+        const { error } = await supabase.storage.from('listings-media').upload(path, thumbFile, { upsert: true })
+        if (!error) {
           const { data: { publicUrl } } = supabase.storage.from('listings-media').getPublicUrl(path)
           thumbnail_url = publicUrl
+        }
+      }
+
+      // ── Upload ZIP/RAR — bucket privado ──
+      if (zipFile) {
+        clearInterval(progressInterval)
+        setProgress(80)
+
+        const ext  = zipFile.name.split('.').pop()
+        const path = `${user.id}/${Date.now()}-arquivo.${ext}`
+
+        // Simula progresso do zip separado
+        const zipInterval = setInterval(() => {
+          setZipProgress(p => Math.min(p + 10, 90))
+        }, 300)
+
+        const { error } = await supabase.storage
+          .from('listings-files')   // bucket privado — crie no Supabase
+          .upload(path, zipFile, { upsert: true })
+
+        clearInterval(zipInterval)
+        setZipProgress(100)
+
+        if (!error) {
+          // URL assinada — expira em 1 ano (só quem comprou acessa)
+          const { data } = await supabase.storage
+            .from('listings-files')
+            .createSignedUrl(path, 60 * 60 * 24 * 365)
+          file_url = data?.signedUrl || null
         }
       }
 
@@ -136,40 +171,39 @@ export default function UploadPage() {
 
       const cat = CATS.find(c => selCats.includes(c.id))
       const { error } = await supabase.from('listings').insert({
-        seller_id: user.id,
-        title: form.title.trim().toUpperCase(),
-        description: form.desc.trim(),
-        price: parseFloat(form.price) || 0,
-        price_old: form.priceOld ? parseFloat(form.priceOld) : null,
-        category: selCats[0] || 'outros',
-        niche: cat?.niche || 'outros',
-        emoji: cat?.emoji || '📦',
+        seller_id:    user.id,
+        title:        form.title.trim().toUpperCase(),
+        description:  form.desc.trim(),
+        price:        parseFloat(form.price) || 0,
+        price_old:    form.priceOld ? parseFloat(form.priceOld) : null,
+        category:     selCats[0] || 'outros',
+        niche:        cat?.niche || 'outros',
+        emoji:        cat?.emoji || '📦',
         tags,
         media_url,
         thumbnail_url,
-        html_url: form.url || null,
+        html_url:     file_url || form.url || null,  // prioriza arquivo zip
+        file_url,                                     // campo novo (adicione na tabela)
+        file_name:    zipFile?.name || null,          // nome original do arquivo
         status: 'live',
         rating: 5.0,
         reviews_count: 0,
-        sales_count: 0,
+        sales_count:   0,
       })
 
       setProgress(100)
-
       if (error) throw error
 
       showToast('🎉 Anúncio publicado! Já aparece na vitrine.', 'ok')
-
-      // Reset form
       setForm({ title: '', desc: '', price: '', priceOld: '', url: '' })
-      setSelCats([]); setTags([]); setMediaFile(null); setThumbFile(null)
-      setMediaPreview(''); setThumbPreview(''); setErrors({})
+      setSelCats([]); setTags([]); setMediaFile(null); setThumbFile(null); setZipFile(null)
+      setMediaPreview(''); setThumbPreview(''); setErrors({}); setZipProgress(0)
       loadMyListings()
     } catch (e: any) {
       showToast('Erro ao publicar: ' + (e.message || 'Tente novamente'), 'err')
     } finally {
       setUploading(false)
-      setTimeout(() => setProgress(0), 1500)
+      setTimeout(() => { setProgress(0); setZipProgress(0) }, 1500)
     }
   }
 
@@ -195,21 +229,18 @@ export default function UploadPage() {
     <>
       <Header />
       <ToastRoot />
-
       <div style={{ maxWidth: 1100, margin: '0 auto', padding: '32px 24px 64px' }}>
         <div style={{ marginBottom: 28 }}>
           <h1 style={{ fontSize: 24, fontWeight: 800, letterSpacing: '-.03em' }}>Criar Anúncio</h1>
           <p style={{ fontSize: 14, color: 'var(--text-3)', marginTop: 4 }}>Preencha os campos e publique na vitrine instantaneamente.</p>
         </div>
 
-        {/* Info bar */}
         <div style={{ background: 'var(--blue-light)', border: '1px solid var(--blue)', borderRadius: 'var(--r)', padding: '10px 14px', display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, fontWeight: 600, color: 'var(--blue)', marginBottom: 24 }}>
           <svg width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
           Campos com <span style={{ color: 'var(--red)', margin: '0 3px' }}>*</span> são obrigatórios para publicar
         </div>
 
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 300px', gap: 24, alignItems: 'start' }}>
-          {/* LEFT — Form */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
 
             {/* ── MÍDIA ── */}
@@ -218,19 +249,12 @@ export default function UploadPage() {
                 Mídia principal <span style={{ color: 'var(--red)' }}>*</span>
                 <div style={{ flex: 1, height: 1, background: 'var(--border)' }} />
               </div>
-
-              {/* Drop zone */}
               <div
                 onDragOver={e => { e.preventDefault(); setIsDragging(true) }}
                 onDragLeave={() => setIsDragging(false)}
                 onDrop={handleDrop}
                 onClick={() => !mediaFile && fileRef.current?.click()}
-                style={{
-                  border: `2px dashed ${isDragging ? 'var(--blue)' : errors.media ? 'var(--red)' : 'var(--border-2)'}`,
-                  borderRadius: 'var(--r)', background: isDragging ? 'var(--blue-light)' : mediaPreview ? '#000' : 'var(--surface)',
-                  minHeight: 200, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-                  cursor: mediaFile ? 'default' : 'pointer', position: 'relative', overflow: 'hidden', transition: 'all .15s'
-                }}
+                style={{ border: `2px dashed ${isDragging ? 'var(--blue)' : errors.media ? 'var(--red)' : 'var(--border-2)'}`, borderRadius: 'var(--r)', background: isDragging ? 'var(--blue-light)' : mediaPreview ? '#000' : 'var(--surface)', minHeight: 200, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', cursor: mediaFile ? 'default' : 'pointer', position: 'relative', overflow: 'hidden', transition: 'all .15s' }}
               >
                 {mediaPreview ? (
                   <>
@@ -287,6 +311,74 @@ export default function UploadPage() {
               </div>
             </div>
 
+            {/* ── ARQUIVO ZIP/RAR ── NOVO ── */}
+            <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 'var(--r)', padding: 20, boxShadow: 'var(--shadow-sm)' }}>
+              <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.1em', color: 'var(--text-3)', marginBottom: 4, display: 'flex', alignItems: 'center', gap: 10 }}>
+                📦 Arquivo do produto (ZIP / RAR)
+                <span style={{ fontSize: 10, fontWeight: 600, background: '#ECFDF5', color: '#059669', border: '1px solid #A7F3D0', borderRadius: 'var(--r-full)', padding: '2px 8px' }}>Opcional</span>
+                <div style={{ flex: 1, height: 1, background: 'var(--border)' }} />
+              </div>
+              <div style={{ fontSize: 12, color: 'var(--text-3)', marginBottom: 12 }}>
+                Enviado de forma privada — o comprador só recebe o link após o pagamento confirmado. Máx. {MAX_ZIP_MB}MB.
+              </div>
+
+              {zipFile ? (
+                // Arquivo selecionado
+                <div style={{ border: '1px solid #A7F3D0', background: '#ECFDF5', borderRadius: 'var(--r)', padding: '14px 16px', display: 'flex', alignItems: 'center', gap: 14 }}>
+                  <div style={{ fontSize: 32 }}>
+                    {zipFile.name.endsWith('.zip') ? '🗜️' : zipFile.name.endsWith('.rar') ? '📦' : '🗂️'}
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{zipFile.name}</div>
+                    <div style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 2 }}>
+                      {(zipFile.size / 1024 / 1024).toFixed(1)} MB · Pronto para upload
+                    </div>
+                    {zipProgress > 0 && zipProgress < 100 && (
+                      <div style={{ marginTop: 8 }}>
+                        <div style={{ background: 'var(--border)', borderRadius: 'var(--r-full)', height: 4, overflow: 'hidden' }}>
+                          <div style={{ height: '100%', background: 'var(--green)', width: `${zipProgress}%`, transition: 'width .3s', borderRadius: 'var(--r-full)' }} />
+                        </div>
+                        <div style={{ fontSize: 10, color: 'var(--text-3)', marginTop: 3 }}>Enviando... {zipProgress}%</div>
+                      </div>
+                    )}
+                  </div>
+                  <button onClick={() => { setZipFile(null); setZipProgress(0) }}
+                    style={{ background: '#FEF2F2', border: '1px solid #FECACA', borderRadius: 'var(--r)', padding: '6px 12px', fontSize: 11, fontWeight: 700, cursor: 'pointer', color: 'var(--red)', flexShrink: 0 }}>
+                    Remover
+                  </button>
+                </div>
+              ) : (
+                // Drop zone ZIP
+                <div
+                  onClick={() => zipRef.current?.click()}
+                  style={{ border: '2px dashed var(--border-2)', borderRadius: 'var(--r)', background: 'var(--surface)', padding: '28px 20px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10, cursor: 'pointer', transition: 'all .15s', textAlign: 'center' }}
+                  onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--blue)'; e.currentTarget.style.background = 'var(--blue-light)' }}
+                  onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--border-2)'; e.currentTarget.style.background = 'var(--surface)' }}
+                  onDragOver={e => { e.preventDefault(); e.currentTarget.style.borderColor = 'var(--blue)' }}
+                  onDrop={e => {
+                    e.preventDefault()
+                    e.currentTarget.style.borderColor = 'var(--border-2)'
+                    const f = e.dataTransfer.files[0]
+                    if (f) handleZip(f)
+                  }}
+                >
+                  <div style={{ fontSize: 36 }}>🗜️</div>
+                  <div>
+                    <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text)' }}>Clique ou arraste seu arquivo aqui</div>
+                    <div style={{ fontSize: 12, color: 'var(--text-3)', marginTop: 3 }}>O comprador baixa automaticamente após pagar</div>
+                  </div>
+                  <div style={{ display: 'flex', gap: 6 }}>
+                    {['ZIP', 'RAR', '7Z', 'TAR'].map(t => (
+                      <span key={t} style={{ border: '1px solid var(--border-2)', background: '#fff', padding: '2px 9px', borderRadius: 'var(--r-full)', fontSize: 10, fontWeight: 700, color: 'var(--text-3)' }}>{t}</span>
+                    ))}
+                  </div>
+                  <div style={{ fontSize: 11, color: 'var(--text-3)' }}>Máximo {MAX_ZIP_MB}MB</div>
+                </div>
+              )}
+              <input ref={zipRef} type="file" accept={ACCEPTED_ZIP} style={{ display: 'none' }}
+                onChange={e => e.target.files?.[0] && handleZip(e.target.files[0])} />
+            </div>
+
             {/* ── INFORMAÇÕES ── */}
             <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 'var(--r)', padding: 20, boxShadow: 'var(--shadow-sm)' }}>
               <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.1em', color: 'var(--text-3)', marginBottom: 16, display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -313,7 +405,9 @@ export default function UploadPage() {
                   <label style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-2)', display: 'block', marginBottom: 5 }}>Link de entrega (opcional)</label>
                   <input value={form.url} onChange={e => setForm(f => ({ ...f, url: e.target.value }))} placeholder="https://drive.google.com/... ou link de acesso"
                     style={{ width: '100%', border: '1px solid var(--border-2)', borderRadius: 'var(--r)', padding: '10px 14px', fontSize: 14, fontFamily: 'Inter,sans-serif', outline: 'none', color: 'var(--text)' }} />
-                  <div style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 3 }}>Link privado compartilhado somente após confirmação do pagamento</div>
+                  <div style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 3 }}>
+                    {zipFile ? '⚠️ Ignorado quando há arquivo ZIP enviado acima' : 'Link privado compartilhado somente após confirmação do pagamento'}
+                  </div>
                 </div>
               </div>
             </div>
@@ -382,20 +476,27 @@ export default function UploadPage() {
               <div style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 4 }}>Máximo 8 tags · Aparecem como features no card do produto</div>
             </div>
 
-            {/* Progress bar */}
+            {/* Progress */}
             {uploading && (
               <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 'var(--r)', padding: 16 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, fontWeight: 600, color: 'var(--text-2)', marginBottom: 8 }}>
                   <span>{progress < 100 ? 'Publicando anúncio...' : '✅ Publicado!'}</span>
                   <span>{progress}%</span>
                 </div>
-                <div style={{ background: 'var(--border)', borderRadius: 'var(--r-full)', height: 8, overflow: 'hidden' }}>
+                <div style={{ background: 'var(--border)', borderRadius: 'var(--r-full)', height: 8, overflow: 'hidden', marginBottom: zipFile ? 10 : 0 }}>
                   <div style={{ height: '100%', background: progress === 100 ? 'var(--green)' : 'var(--blue)', width: `${progress}%`, transition: 'width .3s', borderRadius: 'var(--r-full)' }} />
                 </div>
+                {zipFile && (
+                  <>
+                    <div style={{ fontSize: 11, color: 'var(--text-3)', marginBottom: 4 }}>📦 Enviando arquivo ZIP... {zipProgress}%</div>
+                    <div style={{ background: 'var(--border)', borderRadius: 'var(--r-full)', height: 5, overflow: 'hidden' }}>
+                      <div style={{ height: '100%', background: 'var(--green)', width: `${zipProgress}%`, transition: 'width .3s', borderRadius: 'var(--r-full)' }} />
+                    </div>
+                  </>
+                )}
               </div>
             )}
 
-            {/* Submit */}
             <button onClick={handleSubmit} disabled={uploading}
               style={{ width: '100%', padding: 16, background: uploading ? 'var(--border-2)' : 'var(--blue)', color: '#fff', border: 'none', borderRadius: 'var(--r)', fontSize: 16, fontWeight: 700, cursor: uploading ? 'not-allowed' : 'pointer', transition: 'background .15s' }}>
               {uploading ? '⏳ Publicando...' : '🚀 Publicar na Vitrine'}
@@ -404,7 +505,6 @@ export default function UploadPage() {
 
           {/* RIGHT — Sidebar */}
           <div style={{ position: 'sticky', top: 80 }}>
-            {/* Checklist */}
             <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 'var(--r)', padding: 16, marginBottom: 14, boxShadow: 'var(--shadow-sm)' }}>
               <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text)', marginBottom: 14, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 Checklist
@@ -414,11 +514,11 @@ export default function UploadPage() {
                 <div style={{ height: '100%', background: done === 5 ? 'var(--green)' : done >= 3 ? 'var(--yellow)' : 'var(--red)', width: `${done / 5 * 100}%`, transition: 'width .4s, background .3s', borderRadius: 'var(--r-full)' }} />
               </div>
               {[
-                { key: 'media',  label: 'Mídia',      done: !!mediaFile },
-                { key: 'title',  label: 'Título',     done: !!form.title.trim() },
-                { key: 'desc',   label: 'Descrição',  done: !!form.desc.trim() },
-                { key: 'cats',   label: 'Categoria',  done: selCats.length > 0 },
-                { key: 'price',  label: 'Preço',      done: form.price !== '' },
+                { key: 'media', label: 'Mídia',     done: !!mediaFile },
+                { key: 'title', label: 'Título',    done: !!form.title.trim() },
+                { key: 'desc',  label: 'Descrição', done: !!form.desc.trim() },
+                { key: 'cats',  label: 'Categoria', done: selCats.length > 0 },
+                { key: 'price', label: 'Preço',     done: form.price !== '' },
               ].map((item, i) => (
                 <div key={item.key} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 0', borderBottom: i < 4 ? '1px solid var(--border)' : 'none' }}>
                   <div style={{ width: 22, height: 22, borderRadius: 'var(--r)', border: `1.5px solid ${item.done ? 'var(--green)' : 'var(--border-2)'}`, background: item.done ? 'var(--green)' : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 800, color: item.done ? '#fff' : 'var(--text-3)', flexShrink: 0, transition: 'all .2s' }}>
@@ -427,9 +527,15 @@ export default function UploadPage() {
                   <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text)' }}>{item.label}</span>
                 </div>
               ))}
+              {zipFile && (
+                <div style={{ marginTop: 10, padding: '8px 10px', background: '#ECFDF5', border: '1px solid #A7F3D0', borderRadius: 'var(--r)', display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <span style={{ fontSize: 14 }}>🗜️</span>
+                  <span style={{ fontSize: 11, fontWeight: 600, color: '#059669' }}>Arquivo ZIP anexado</span>
+                </div>
+              )}
             </div>
 
-            {/* Preview card */}
+            {/* Preview */}
             <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 'var(--r)', padding: 16, boxShadow: 'var(--shadow-sm)' }}>
               <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-3)', marginBottom: 12, textTransform: 'uppercase', letterSpacing: '.06em' }}>Prévia do card</div>
               <div style={{ border: '1px solid var(--border)', borderRadius: 'var(--r)', overflow: 'hidden' }}>
@@ -443,6 +549,11 @@ export default function UploadPage() {
                   <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text)', textTransform: 'uppercase', marginBottom: 6, minHeight: 18 }}>
                     {form.title || 'Título do anúncio'}
                   </div>
+                  {zipFile && (
+                    <div style={{ fontSize: 10, color: '#059669', fontWeight: 600, marginBottom: 6, display: 'flex', alignItems: 'center', gap: 4 }}>
+                      🗜️ Inclui arquivo para download
+                    </div>
+                  )}
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <div style={{ fontSize: 16, fontWeight: 800, color: form.price === '0' || form.price === '' ? 'var(--text-3)' : 'var(--blue)' }}>
                       {form.price === '' ? 'R$ —' : form.price === '0' ? 'Grátis' : `R$ ${Number(form.price).toFixed(2).replace('.', ',')}`}
@@ -463,7 +574,6 @@ export default function UploadPage() {
             <h2 style={{ fontSize: 20, fontWeight: 800, letterSpacing: '-.03em' }}>Meus Anúncios</h2>
             <span style={{ fontSize: 13, color: 'var(--text-3)', fontWeight: 500 }}>{listings.length} publicados</span>
           </div>
-
           {listings.length === 0 ? (
             <div style={{ textAlign: 'center', padding: '48px 24px', background: '#fff', border: '1px solid var(--border)', borderRadius: 'var(--r)' }}>
               <div style={{ fontSize: 40, marginBottom: 12 }}>📦</div>
